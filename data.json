@@ -1,0 +1,31 @@
+{
+  "votes": [
+    {
+      "date": "2025-01-13",
+      "availableUsers": [
+        "Isak"
+      ],
+      "votes": 1
+    },
+    {
+      "date": "2025-01-14",
+      "availableUsers": [
+        "Emil"
+      ],
+      "votes": 0
+    }
+  ],
+  "userVoted": null,
+  "availability": {
+    "2025-01-13": [
+      "Isak"
+    ],
+    "2025-01-14": [
+      "Emil"
+    ],
+    "2025-01-15": []
+  },
+  "userVotes": {
+    "Isak": "2025-01-13"
+  }
+}
