@@ -10,7 +10,7 @@ On first launch, a setup form lets you add your group's players — no config fi
 - **Weekly calendar** — each player toggles their availability per weekday
 - **Best day detection** — automatically finds the day with the most players available
 - **Tiebreaker voting** — when multiple days tie, players vote to decide
-- **Auto-reset** — availability and votes clear every Monday
+- **Auto-reset** — availability and votes clear every Friday to prepare for the incoming week
 
 ## Tech Stack
 

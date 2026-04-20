@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getDb } from '@/app/lib/db'
-import { isMonday, startOfDay, format } from 'date-fns'
+import { isFriday, startOfDay, format } from 'date-fns'
 
 function checkAndResetWeek(db: ReturnType<typeof getDb>) {
   const today = new Date()
-  if (isMonday(today)) {
+  if (isFriday(today)) {
     const config = db.prepare("SELECT value FROM app_config WHERE key = 'last_reset'").get() as { value: string } | undefined
     const lastReset = config?.value ? new Date(config.value) : null
     if (!lastReset || lastReset < startOfDay(today)) {
