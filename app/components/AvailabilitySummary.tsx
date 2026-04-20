@@ -2,76 +2,42 @@
 
 import { useState, useEffect } from 'react'
 import { format, parseISO } from 'date-fns'
-import { motion } from 'framer-motion'
 import VotingSystem from './VotingSystem'
 
-const calculateBestDays = (availabilityData: { [key: string]: string[] }) => {
+interface AvailabilitySummaryProps {
+  players: { id: number; name: string }[]
+}
+
+const calculateBestDays = (availabilityData: Record<string, string[]>) => {
   let maxAvailable = 0
   let bestDates: { date: string; availableUsers: string[] }[] = []
 
   for (const [date, users] of Object.entries(availabilityData)) {
-    const availableUsers = users as string[]
-    if (availableUsers.length > maxAvailable) {
-      maxAvailable = availableUsers.length
-      bestDates = [{ date, availableUsers }]
-    } else if (availableUsers.length === maxAvailable && availableUsers.length > 0) {
-      bestDates.push({ date, availableUsers })
+    if (users.length > maxAvailable) {
+      maxAvailable = users.length
+      bestDates = [{ date, availableUsers: users }]
+    } else if (users.length === maxAvailable && users.length > 0) {
+      bestDates.push({ date, availableUsers: users })
     }
   }
 
   return bestDates
 }
 
-export default function AvailabilitySummary() {
+export default function AvailabilitySummary({ players }: AvailabilitySummaryProps) {
   const [bestDays, setBestDays] = useState<{ date: string; availableUsers: string[] }[]>([])
   const [isLoading, setIsLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     const updateBestDays = async () => {
       setIsLoading(true)
-      setError(null)
       try {
-        const response = await fetch('/api/storage')
-        if (!response.ok) {
-          throw new Error(`Failed to fetch data: ${response.status} ${response.statusText}`)
-        }
-        const data = await response.json()
-        if (!data || typeof data !== 'object') {
-          throw new Error(`Invalid data received: ${JSON.stringify(data)}`)
-        }
-        const availabilityData = data.availability || {}
-        const bestDates = calculateBestDays(availabilityData)
-        setBestDays(bestDates)
-
-        if (bestDates.length > 1) {
-          const votingOptions = bestDates.map(day => ({ ...day, votes: 0 }))
-          const voteResponse = await fetch('/api/storage', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ votes: votingOptions }),
-          })
-          if (!voteResponse.ok) {
-            throw new Error(`Failed to update voting options: ${voteResponse.status} ${voteResponse.statusText}`)
-          }
-          window.dispatchEvent(new Event('votingOptionsChanged'))
-        } else {
-          const clearResponse = await fetch('/api/storage', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ votes: null, userVoted: null }),
-          })
-          if (!clearResponse.ok) {
-            throw new Error(`Failed to clear voting options: ${clearResponse.status} ${clearResponse.statusText}`)
-          }
-        }
+        const res = await fetch('/api/availability')
+        if (!res.ok) throw new Error('Failed to fetch')
+        const data = await res.json()
+        setBestDays(calculateBestDays(data))
       } catch (err) {
-        console.error('Error updating best days:', err)
-        setError(err instanceof Error ? err.message : 'An unknown error occurred')
+        console.error('Error:', err)
       } finally {
         setIsLoading(false)
       }
@@ -79,73 +45,53 @@ export default function AvailabilitySummary() {
 
     updateBestDays()
     window.addEventListener('availabilityChanged', updateBestDays)
-
-    return () => {
-      window.removeEventListener('availabilityChanged', updateBestDays)
-    }
+    return () => window.removeEventListener('availabilityChanged', updateBestDays)
   }, [])
 
   if (isLoading) {
     return (
-      <motion.div
-        className="mt-6 sm:mt-8 p-4 sm:p-6 bg-white bg-opacity-10 backdrop-blur-lg rounded-xl shadow-lg"
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5 }}
-      >
-        <p className="text-base sm:text-lg">Loading...</p>
-      </motion.div>
-    )
-  }
-
-  if (error) {
-    return (
-      <motion.div
-        className="mt-6 sm:mt-8 p-4 sm:p-6 bg-white bg-opacity-10 backdrop-blur-lg rounded-xl shadow-lg"
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5 }}
-      >
-        <p className="text-base sm:text-lg text-red-500">Error: {error}</p>
-      </motion.div>
+      <div className="section-card">
+        <p className="mono" style={{ color: 'var(--text-muted)' }}>Calculating best day...</p>
+      </div>
     )
   }
 
   if (bestDays.length === 0) {
     return (
-      <motion.div
-        className="mt-6 sm:mt-8 p-4 sm:p-6 bg-white bg-opacity-10 backdrop-blur-lg rounded-xl shadow-lg"
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5 }}
-      >
-        <p className="text-base sm:text-lg">No suggested game night yet. Please select your availability.</p>
-      </motion.div>
+      <div className="section-card">
+        <div className="card-shine"></div>
+        <div className="section-label">
+          <span className="label-line"></span>
+          <span className="mono">02 — Result</span>
+        </div>
+        <h2 className="section-heading">Game Night</h2>
+        <p className="summary-empty">Select your availability above to find the best day.</p>
+      </div>
     )
   }
 
   if (bestDays.length === 1) {
     const { date, availableUsers } = bestDays[0]
     return (
-      <motion.div
-        className="mt-6 sm:mt-8 p-4 sm:p-6 bg-white bg-opacity-10 backdrop-blur-lg rounded-xl shadow-lg"
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5 }}
-      >
-        <h2 className="text-xl sm:text-2xl font-semibold mb-4">Suggested Gaming Night</h2>
-        <p className="text-base sm:text-lg mb-2">
-          The best day for gaming night is{' '}
-          <span className="font-bold text-yellow-300">
-            {format(parseISO(date), 'EEEE, MMMM d')}
-          </span>
-        </p>
-        <p className="text-sm sm:text-base">
-          Available players: {availableUsers.join(', ')}
-        </p>
-      </motion.div>
+      <div className="section-card result-card">
+        <div className="card-shine"></div>
+        <div className="section-label">
+          <span className="label-line"></span>
+          <span className="mono">02 — Result</span>
+        </div>
+        <h2 className="section-heading">Game Night</h2>
+        <div className="result-highlight">
+          <span className="result-day gradient-text">{format(parseISO(date), 'EEEE')}</span>
+          <span className="result-date mono">{format(parseISO(date), 'MMMM d')}</span>
+        </div>
+        <div className="result-players">
+          {availableUsers.map(user => (
+            <span key={user} className="result-player-tag">{user}</span>
+          ))}
+        </div>
+      </div>
     )
   }
 
-  return <VotingSystem bestDays={bestDays} />
+  return <VotingSystem bestDays={bestDays} players={players} />
 }

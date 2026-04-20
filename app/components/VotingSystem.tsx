@@ -1,211 +1,150 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { format, parseISO, startOfWeek, addDays } from 'date-fns'
-import { motion } from 'framer-motion'
-
-type VotingOption = {
-  date: string
-  availableUsers: string[]
-  votes: number
-}
+import { format, parseISO } from 'date-fns'
 
 interface VotingSystemProps {
   bestDays: { date: string; availableUsers: string[] }[]
+  players: { id: number; name: string }[]
 }
 
-const users = ['Isak', 'Emil', 'Carl', 'Mark']
-
-export default function VotingSystem({ bestDays }: VotingSystemProps) {
-  const [votingOptions, setVotingOptions] = useState<VotingOption[]>([])
+export default function VotingSystem({ bestDays, players }: VotingSystemProps) {
   const [userVotes, setUserVotes] = useState<Record<string, string>>({})
+  const [voteCounts, setVoteCounts] = useState<Record<string, number>>({})
   const [selectedUser, setSelectedUser] = useState<string>('')
   const [isLoading, setIsLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    const fetchVotingData = async () => {
-      setIsLoading(true)
-      setError(null)
-      try {
-        const response = await fetch('/api/storage')
-        if (!response.ok) {
-          throw new Error(`Failed to fetch voting data: ${response.status} ${response.statusText}`)
+    fetch('/api/votes')
+      .then(res => res.json())
+      .then(data => {
+        setUserVotes(data.userVotes || {})
+        const c: Record<string, number> = {}
+        for (const date of Object.values(data.userVotes || {}) as string[]) {
+          c[date] = (c[date] || 0) + 1
         }
-        const data = await response.json()
-        if (data.votes) {
-          setVotingOptions(data.votes)
-        } else {
-          const currentWeekStart = startOfWeek(new Date(), { weekStartsOn: 1 })
-          const weekDays = Array.from({ length: 5 }, (_, i) => addDays(currentWeekStart, i))
-          setVotingOptions(weekDays.map(day => ({
-            date: format(day, 'yyyy-MM-dd'),
-            availableUsers: [],
-            votes: 0
-          })))
-        }
-        if (data.userVotes) {
-          setUserVotes(data.userVotes)
-        }
-      } catch (err) {
-        console.error('Error fetching voting data:', err)
-        setError(err instanceof Error ? err.message : 'An unknown error occurred')
-      } finally {
-        setIsLoading(false)
-      }
-    }
-
-    fetchVotingData()
+        setVoteCounts(c)
+      })
+      .catch(console.error)
+      .finally(() => setIsLoading(false))
   }, [])
 
   const handleVote = async (date: string) => {
-    if (!selectedUser) {
-      setError('Please select a user before voting')
-      return
-    }
+    if (!selectedUser) return
 
     try {
-      let updatedOptions = [...votingOptions]
-      let updatedUserVotes = { ...userVotes }
-
-      // Remove previous vote if exists
-      if (userVotes[selectedUser]) {
-        updatedOptions = updatedOptions.map(option =>
-          option.date === userVotes[selectedUser] ? { ...option, votes: option.votes - 1 } : option
-        )
-      }
-
-      // Add new vote
-      updatedOptions = updatedOptions.map(option =>
-        option.date === date ? { ...option, votes: option.votes + 1 } : option
-      )
-
-      updatedUserVotes[selectedUser] = date
-
-      setVotingOptions(updatedOptions)
-      setUserVotes(updatedUserVotes)
-
-      const response = await fetch('/api/storage', {
+      const res = await fetch('/api/votes', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ votes: updatedOptions, userVotes: updatedUserVotes }),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ playerName: selectedUser, date }),
       })
+      if (!res.ok) throw new Error('Vote failed')
 
-      if (!response.ok) {
-        throw new Error(`Failed to update vote: ${response.status} ${response.statusText}`)
-      }
+      // Update local state
+      const oldDate = userVotes[selectedUser]
+      const newCounts = { ...voteCounts }
+      if (oldDate) newCounts[oldDate] = Math.max((newCounts[oldDate] || 1) - 1, 0)
+      newCounts[date] = (newCounts[date] || 0) + 1
+
+      setVoteCounts(newCounts)
+      setUserVotes({ ...userVotes, [selectedUser]: date })
     } catch (err) {
-      console.error('Error updating vote:', err)
-      setError(err instanceof Error ? err.message : 'An unknown error occurred')
+      console.error('Error voting:', err)
     }
   }
 
   const handleRemoveVote = async () => {
-    if (!selectedUser || !userVotes[selectedUser]) {
-      setError('No vote to remove for the selected user')
-      return
-    }
+    if (!selectedUser || !userVotes[selectedUser]) return
 
     try {
-      let updatedOptions = votingOptions.map(option =>
-        option.date === userVotes[selectedUser] ? { ...option, votes: option.votes - 1 } : option
-      )
-      let updatedUserVotes = { ...userVotes }
-      delete updatedUserVotes[selectedUser]
-
-      setVotingOptions(updatedOptions)
-      setUserVotes(updatedUserVotes)
-
-      const response = await fetch('/api/storage', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ votes: updatedOptions, userVotes: updatedUserVotes }),
+      const res = await fetch('/api/votes', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ playerName: selectedUser }),
       })
+      if (!res.ok) throw new Error('Remove vote failed')
 
-      if (!response.ok) {
-        throw new Error(`Failed to remove vote: ${response.status} ${response.statusText}`)
-      }
+      const oldDate = userVotes[selectedUser]
+      const newCounts = { ...voteCounts }
+      if (oldDate) newCounts[oldDate] = Math.max((newCounts[oldDate] || 1) - 1, 0)
+
+      setVoteCounts(newCounts)
+      const newVotes = { ...userVotes }
+      delete newVotes[selectedUser]
+      setUserVotes(newVotes)
     } catch (err) {
       console.error('Error removing vote:', err)
-      setError(err instanceof Error ? err.message : 'An unknown error occurred')
     }
   }
 
   if (isLoading) {
-    return <p className="text-base sm:text-lg">Loading voting options...</p>
-  }
-
-  if (error) {
-    return <p className="text-base sm:text-lg text-red-500">Error: {error}</p>
+    return <div className="section-card"><p className="mono" style={{ color: 'var(--text-muted)' }}>Loading votes...</p></div>
   }
 
   const totalVotes = Object.keys(userVotes).length
 
   return (
-    <motion.div
-      className="mt-6 sm:mt-8 p-4 sm:p-6 bg-white bg-opacity-10 backdrop-blur-lg rounded-xl shadow-lg"
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.5 }}
-    >
-      <h2 className="text-xl sm:text-2xl font-semibold mb-4">Vote for Gaming Night</h2>
-      <p className="text-sm sm:text-base mb-4">
-        Please vote for your preferred day this week:
-      </p>
-      <div className="mb-4">
-        <label htmlFor="user-select" className="block text-sm font-medium text-gray-300 mb-2">
-          Select your name:
-        </label>
-        <select
-          id="user-select"
-          value={selectedUser}
-          onChange={(e) => setSelectedUser(e.target.value)}
-          className="block w-full px-3 py-2 bg-white bg-opacity-10 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-        >
-          <option value="">Select a user</option>
-          {users.map((user) => (
-            <option key={user} value={user}>
-              {user}
-            </option>
-          ))}
-        </select>
+    <div className="section-card">
+      <div className="card-shine"></div>
+      <div className="section-label">
+        <span className="label-line"></span>
+        <span className="mono">02 — Tiebreaker</span>
       </div>
-      <div className="space-y-4">
-        {votingOptions.map((option) => (
-          <div key={option.date} className="flex items-center justify-between">
-            <div>
-              <p className="font-semibold">{format(parseISO(option.date), 'EEEE, MMMM d')}</p>
-              <p className="text-sm opacity-70">Available: {option.availableUsers.join(', ')}</p>
-            </div>
+      <h2 className="section-heading">Vote for <span className="gradient-text">Game Night</span></h2>
+      <p className="vote-sub">Multiple days tied! Cast your vote to decide.</p>
+
+      <div className="vote-user-select">
+        <label className="mono vote-label">Who are you?</label>
+        <div className="vote-user-chips">
+          {players.map(p => (
             <button
-              onClick={() => handleVote(option.date)}
-              disabled={totalVotes >= 4 && !userVotes[selectedUser]}
-              className={`px-4 py-2 rounded-full ${
-                totalVotes >= 4 && !userVotes[selectedUser]
-                  ? 'bg-gray-500 cursor-not-allowed'
-                  : 'bg-green-500 hover:bg-green-600'
-              } transition-colors`}
+              key={p.id}
+              onClick={() => setSelectedUser(p.name)}
+              className={`vote-chip ${selectedUser === p.name ? 'vote-chip-active' : ''}`}
             >
-              {userVotes[selectedUser] === option.date ? 'Change Vote' : 'Vote'} ({option.votes})
+              {p.name}
+              {userVotes[p.name] && <span className="vote-chip-dot"></span>}
             </button>
-          </div>
-        ))}
+          ))}
+        </div>
       </div>
-      {userVotes[selectedUser] && (
-        <button
-          onClick={handleRemoveVote}
-          className="mt-4 px-4 py-2 bg-red-500 hover:bg-red-600 rounded-full transition-colors"
-        >
-          Remove Vote
+
+      <div className="vote-options">
+        {bestDays.map(option => {
+          const count = voteCounts[option.date] || 0
+          const isMyVote = userVotes[selectedUser] === option.date
+          return (
+            <div key={option.date} className={`vote-option ${isMyVote ? 'vote-option-selected' : ''}`}>
+              <div className="vote-option-info">
+                <span className="vote-option-day">{format(parseISO(option.date), 'EEEE')}</span>
+                <span className="vote-option-date mono">{format(parseISO(option.date), 'MMM d')}</span>
+                <span className="vote-option-players">{option.availableUsers.join(', ')}</span>
+              </div>
+              <div className="vote-option-action">
+                <span className="vote-count mono">{count}</span>
+                <button
+                  onClick={() => handleVote(option.date)}
+                  disabled={!selectedUser}
+                  className={`btn ${isMyVote ? 'btn-primary' : 'btn-ghost'} vote-btn`}
+                >
+                  {isMyVote ? 'Voted' : 'Vote'}
+                </button>
+              </div>
+            </div>
+          )
+        })}
+      </div>
+
+      {selectedUser && userVotes[selectedUser] && (
+        <button onClick={handleRemoveVote} className="btn btn-ghost remove-vote-btn">
+          Remove my vote
         </button>
       )}
-      <p className="mt-4 text-sm text-center">
-        Total votes: {totalVotes}/4
-      </p>
-    </motion.div>
+
+      <div className="vote-progress">
+        <div className="vote-progress-bar" style={{ width: `${(totalVotes / players.length) * 100}%` }}></div>
+      </div>
+      <p className="mono vote-tally">{totalVotes} / {players.length} voted</p>
+    </div>
   )
 }
