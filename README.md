@@ -2,14 +2,16 @@
 
 A sleek, dark-themed gaming night planner. Players mark their weekly availability and the app finds the best day for everyone. When multiple days tie, a built-in voting system breaks the deadlock.
 
-On first launch, a setup form lets you add your group's players — no config files or hardcoded names.
+On first launch, a setup form lets you add your group's players and set the gaming time window — no config files or hardcoded names.
 
 ## Features
 
 - **Player setup** — add, remove, and persist players on first run
+- **Gaming time config** — set the start and end time (24h format) during setup
 - **Weekly calendar** — each player toggles their availability per weekday
 - **Best day detection** — automatically finds the day with the most players available
 - **Tiebreaker voting** — when multiple days tie, players vote to decide
+- **Calendar invite** — download a `.ics` file when a day is decided (works with Google Calendar, Apple Calendar, Outlook)
 - **Auto-reset** — availability and votes clear every Friday to prepare for the incoming week
 
 ## Tech Stack
@@ -56,12 +58,13 @@ Open [http://localhost:3000](http://localhost:3000). On first visit you'll see t
 app/
 ├── api/
 │   ├── availability/route.ts   # Toggle & fetch player availability
-│   ├── players/route.ts        # CRUD for players
+│   ├── calendar/route.ts       # Generate .ics calendar invite download
+│   ├── players/route.ts        # CRUD for players + time config
 │   └── votes/route.ts          # Cast & remove tiebreaker votes
 ├── components/
-│   ├── PlayerSetup.tsx          # First-launch player form
+│   ├── PlayerSetup.tsx          # First-launch player & time form
 │   ├── WeekCalendar.tsx         # Weekly availability grid
-│   ├── AvailabilitySummary.tsx  # Best day result display
+│   ├── AvailabilitySummary.tsx  # Best day result + calendar download
 │   └── VotingSystem.tsx         # Tiebreaker voting UI
 ├── lib/
 │   └── db.ts                    # SQLite connection & schema
@@ -77,9 +80,15 @@ The app uses an embedded SQLite database (`nightquest.db`) with four tables:
 - **players** — registered player names
 - **availability** — which players are free on which dates
 - **votes** — tiebreaker votes (one per player)
-- **app_config** — tracks the last weekly reset
+- **app_config** — gaming time window (start/end) and last weekly reset
 
 The database file is created automatically on first run and is listed in `.gitignore`.
+
+To reset the database and start fresh (returns you to the player setup form):
+
+```bash
+rm nightquest.db nightquest.db-shm nightquest.db-wal
+```
 
 ## Design
 

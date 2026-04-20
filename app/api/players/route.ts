@@ -14,7 +14,7 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   try {
-    const { names } = await request.json()
+    const { names, startTime, endTime } = await request.json()
     const db = getDb()
 
     if (Array.isArray(names)) {
@@ -25,6 +25,13 @@ export async function POST(request: NextRequest) {
         }
       })
       insertMany(names)
+    }
+
+    if (startTime) {
+      db.prepare("INSERT OR REPLACE INTO app_config (key, value) VALUES ('start_time', ?)").run(startTime)
+    }
+    if (endTime) {
+      db.prepare("INSERT OR REPLACE INTO app_config (key, value) VALUES ('end_time', ?)").run(endTime)
     }
 
     const players = db.prepare('SELECT id, name FROM players ORDER BY name').all()

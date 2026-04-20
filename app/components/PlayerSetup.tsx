@@ -8,6 +8,8 @@ interface PlayerSetupProps {
 
 export default function PlayerSetup({ onComplete }: PlayerSetupProps) {
   const [players, setPlayers] = useState<string[]>(['', '', '', ''])
+  const [startTime, setStartTime] = useState('19:00')
+  const [endTime, setEndTime] = useState('23:00')
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -37,6 +39,11 @@ export default function PlayerSetup({ onComplete }: PlayerSetupProps) {
       return
     }
 
+    if (startTime >= endTime) {
+      setError('End time must be after start time')
+      return
+    }
+
     setIsSubmitting(true)
     setError(null)
 
@@ -44,7 +51,7 @@ export default function PlayerSetup({ onComplete }: PlayerSetupProps) {
       const res = await fetch('/api/players', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ names: uniqueNames }),
+        body: JSON.stringify({ names: uniqueNames, startTime, endTime }),
       })
       if (!res.ok) throw new Error('Failed to save players')
       onComplete()
@@ -99,6 +106,31 @@ export default function PlayerSetup({ onComplete }: PlayerSetupProps) {
           <button onClick={addField} className="btn btn-ghost add-player-btn">
             + Add another player
           </button>
+
+          <div className="setup-time-section">
+            <span className="mono setup-time-label">Gaming time (24h)</span>
+            <div className="setup-time-row">
+              <div className="setup-time-field">
+                <label className="mono field-num">FROM</label>
+                <input
+                  type="time"
+                  value={startTime}
+                  onChange={(e) => setStartTime(e.target.value)}
+                  className="setup-input setup-time-input"
+                />
+              </div>
+              <span className="setup-time-separator">→</span>
+              <div className="setup-time-field">
+                <label className="mono field-num">TO</label>
+                <input
+                  type="time"
+                  value={endTime}
+                  onChange={(e) => setEndTime(e.target.value)}
+                  className="setup-input setup-time-input"
+                />
+              </div>
+            </div>
+          </div>
 
           {error && <p className="setup-error">{error}</p>}
 
