@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getDb } from '@/app/lib/db'
+import { getDb, initSchema } from '@/app/lib/db'
 
 export async function GET() {
   try {
+    await initSchema()
     const db = getDb()
-    const players = db.prepare('SELECT id, name FROM players ORDER BY name').all()
-    return NextResponse.json(players)
+    const result = await db.execute('SELECT id, name FROM players ORDER BY name')
+    return NextResponse.json(result.rows)
   } catch (error) {
     console.error('Error fetching players:', error)
     return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
@@ -15,27 +16,31 @@ export async function GET() {
 export async function POST(request: NextRequest) {
   try {
     const { names, startTime, endTime } = await request.json()
+    await initSchema()
     const db = getDb()
 
     if (Array.isArray(names)) {
-      const insert = db.prepare('INSERT OR IGNORE INTO players (name) VALUES (?)')
-      const insertMany = db.transaction((playerNames: string[]) => {
-        for (const name of playerNames) {
-          if (name.trim()) insert.run(name.trim())
-        }
-      })
-      insertMany(names)
+      const statements = names
+        .map((name: string) => name.trim())
+        .filter(Boolean)
+        .map((name: string) => ({
+          sql: 'INSERT OR IGNORE INTO players (name) VALUES (?)',
+          args: [name],
+        }))
+      if (statements.length > 0) {
+        await db.batch(statements)
+      }
     }
 
     if (startTime) {
-      db.prepare("INSERT OR REPLACE INTO app_config (key, value) VALUES ('start_time', ?)").run(startTime)
+      await db.execute({ sql: "INSERT OR REPLACE INTO app_config (key, value) VALUES ('start_time', ?)", args: [startTime] })
     }
     if (endTime) {
-      db.prepare("INSERT OR REPLACE INTO app_config (key, value) VALUES ('end_time', ?)").run(endTime)
+      await db.execute({ sql: "INSERT OR REPLACE INTO app_config (key, value) VALUES ('end_time', ?)", args: [endTime] })
     }
 
-    const players = db.prepare('SELECT id, name FROM players ORDER BY name').all()
-    return NextResponse.json(players)
+    const result = await db.execute('SELECT id, name FROM players ORDER BY name')
+    return NextResponse.json(result.rows)
   } catch (error) {
     console.error('Error adding players:', error)
     return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
@@ -45,10 +50,11 @@ export async function POST(request: NextRequest) {
 export async function DELETE(request: NextRequest) {
   try {
     const { id } = await request.json()
+    await initSchema()
     const db = getDb()
-    db.prepare('DELETE FROM players WHERE id = ?').run(id)
-    const players = db.prepare('SELECT id, name FROM players ORDER BY name').all()
-    return NextResponse.json(players)
+    await db.execute({ sql: 'DELETE FROM players WHERE id = ?', args: [id] })
+    const result = await db.execute('SELECT id, name FROM players ORDER BY name')
+    return NextResponse.json(result.rows)
   } catch (error) {
     console.error('Error deleting player:', error)
     return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })

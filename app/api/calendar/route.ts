@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getDb } from '@/app/lib/db'
+import { getDb, initSchema } from '@/app/lib/db'
 
 export const dynamic = 'force-dynamic'
 
@@ -31,22 +31,25 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Missing or invalid date parameter' }, { status: 400 })
     }
 
+    await initSchema()
     const db = getDb()
 
-    const startRow = db.prepare("SELECT value FROM app_config WHERE key = 'start_time'").get() as { value: string } | undefined
-    const endRow = db.prepare("SELECT value FROM app_config WHERE key = 'end_time'").get() as { value: string } | undefined
+    const [startResult, endResult, playersResult] = await Promise.all([
+      db.execute({ sql: "SELECT value FROM app_config WHERE key = 'start_time'", args: [] }),
+      db.execute({ sql: "SELECT value FROM app_config WHERE key = 'end_time'", args: [] }),
+      db.execute({
+        sql: `SELECT p.name FROM availability a
+              JOIN players p ON a.player_id = p.id
+              WHERE a.date = ?
+              ORDER BY p.name`,
+        args: [date],
+      }),
+    ])
 
-    const startTime = startRow?.value || '19:00'
-    const endTime = endRow?.value || '23:00'
+    const startTime = (startResult.rows[0]?.value as string) || '19:00'
+    const endTime = (endResult.rows[0]?.value as string) || '23:00'
+    const attendees = playersResult.rows.map(p => p.name as string).join(', ')
 
-    const players = db.prepare(`
-      SELECT p.name FROM availability a
-      JOIN players p ON a.player_id = p.id
-      WHERE a.date = ?
-      ORDER BY p.name
-    `).all(date) as { name: string }[]
-
-    const attendees = players.map(p => p.name).join(', ')
     const dtStart = toIcsDatetime(date, startTime)
     const dtEnd = toIcsDatetime(date, endTime)
     const now = new Date()

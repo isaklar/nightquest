@@ -1,38 +1,51 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getDb } from '@/app/lib/db'
-import { isFriday, startOfDay, format } from 'date-fns'
+import { getDb, initSchema } from '@/app/lib/db'
+import { isFriday, startOfDay } from 'date-fns'
 
-function checkAndResetWeek(db: ReturnType<typeof getDb>) {
+async function checkAndResetWeek() {
+  const db = getDb()
   const today = new Date()
   if (isFriday(today)) {
-    const config = db.prepare("SELECT value FROM app_config WHERE key = 'last_reset'").get() as { value: string } | undefined
-    const lastReset = config?.value ? new Date(config.value) : null
+    const result = await db.execute({
+      sql: "SELECT value FROM app_config WHERE key = 'last_reset'",
+      args: [],
+    })
+    const lastReset = result.rows[0]?.value ? new Date(result.rows[0].value as string) : null
     if (!lastReset || lastReset < startOfDay(today)) {
-      db.prepare('DELETE FROM availability').run()
-      db.prepare('DELETE FROM votes').run()
-      db.prepare("INSERT OR REPLACE INTO app_config (key, value) VALUES ('last_reset', ?)").run(today.toISOString())
+      await db.batch([
+        'DELETE FROM availability',
+        'DELETE FROM votes',
+        { sql: "INSERT OR REPLACE INTO app_config (key, value) VALUES ('last_reset', ?)", args: [today.toISOString()] },
+      ])
     }
   }
 }
 
+async function fetchAvailability() {
+  const db = getDb()
+  const result = await db.execute({
+    sql: `SELECT a.date, p.name as player_name
+          FROM availability a
+          JOIN players p ON a.player_id = p.id
+          ORDER BY a.date, p.name`,
+    args: [],
+  })
+
+  const availability: Record<string, string[]> = {}
+  for (const row of result.rows) {
+    const date = row.date as string
+    const playerName = row.player_name as string
+    if (!availability[date]) availability[date] = []
+    availability[date].push(playerName)
+  }
+  return availability
+}
+
 export async function GET() {
   try {
-    const db = getDb()
-    checkAndResetWeek(db)
-
-    const rows = db.prepare(`
-      SELECT a.date, p.name as player_name
-      FROM availability a
-      JOIN players p ON a.player_id = p.id
-      ORDER BY a.date, p.name
-    `).all() as { date: string; player_name: string }[]
-
-    const availability: Record<string, string[]> = {}
-    for (const row of rows) {
-      if (!availability[row.date]) availability[row.date] = []
-      availability[row.date].push(row.player_name)
-    }
-
+    await initSchema()
+    await checkAndResetWeek()
+    const availability = await fetchAvailability()
     return NextResponse.json(availability)
   } catch (error) {
     console.error('Error fetching availability:', error)
@@ -43,35 +56,27 @@ export async function GET() {
 export async function POST(request: NextRequest) {
   try {
     const { playerName, date } = await request.json()
+    await initSchema()
     const db = getDb()
 
-    const player = db.prepare('SELECT id FROM players WHERE name = ?').get(playerName) as { id: number } | undefined
-    if (!player) {
+    const playerResult = await db.execute({ sql: 'SELECT id FROM players WHERE name = ?', args: [playerName] })
+    if (playerResult.rows.length === 0) {
       return NextResponse.json({ error: 'Player not found' }, { status: 404 })
     }
+    const playerId = playerResult.rows[0].id as number
 
-    const existing = db.prepare('SELECT id FROM availability WHERE player_id = ? AND date = ?').get(player.id, date) as { id: number } | undefined
+    const existing = await db.execute({
+      sql: 'SELECT id FROM availability WHERE player_id = ? AND date = ?',
+      args: [playerId, date],
+    })
 
-    if (existing) {
-      db.prepare('DELETE FROM availability WHERE id = ?').run(existing.id)
+    if (existing.rows.length > 0) {
+      await db.execute({ sql: 'DELETE FROM availability WHERE id = ?', args: [existing.rows[0].id as number] })
     } else {
-      db.prepare('INSERT INTO availability (player_id, date) VALUES (?, ?)').run(player.id, date)
+      await db.execute({ sql: 'INSERT INTO availability (player_id, date) VALUES (?, ?)', args: [playerId, date] })
     }
 
-    // Return updated availability
-    const rows = db.prepare(`
-      SELECT a.date, p.name as player_name
-      FROM availability a
-      JOIN players p ON a.player_id = p.id
-      ORDER BY a.date, p.name
-    `).all() as { date: string; player_name: string }[]
-
-    const availability: Record<string, string[]> = {}
-    for (const row of rows) {
-      if (!availability[row.date]) availability[row.date] = []
-      availability[row.date].push(row.player_name)
-    }
-
+    const availability = await fetchAvailability()
     return NextResponse.json(availability)
   } catch (error) {
     console.error('Error toggling availability:', error)
